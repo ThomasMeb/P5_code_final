@@ -16,6 +16,14 @@ app = Flask(__name__)
 with open('model/model.pkl', 'rb') as file:
     ovr_model = pickle.load(file)
 
+# Charger le TfidfVectorizer ajusté
+with open('model/tfidf_vectorizer.pkl', 'rb') as f:
+    tfidf = pickle.load(f)
+
+# Charger le modèle OVR
+with open('model/model.pkl', 'rb') as file:
+    ovr_model = pickle.load(file)
+
 # Charger le TfidfVectorizer
 tfidf = TfidfVectorizer(max_df=1.0, min_df=1, stop_words='english')
 
@@ -55,6 +63,10 @@ def transform_bow_lem_fct(desc_text) :
     lem_w = lemma_fct(lw)    
     transf_desc_text = ' '.join(lem_w)
     return transf_desc_text
+
+@app.route('/')
+def home():
+    return "API Flask pour la prédiction de texte"
 
 
 @app.route('/predict', methods=['POST'])
