@@ -1,5 +1,6 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, current_app, jsonify
 import pickle
+import json
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
@@ -10,7 +11,22 @@ nltk.download('punkt')
 nltk.download('wordnet')
 nltk.download('stopwords')
 
+# Créer une classe personnalisée pour gérer la sérialisation des objets numpy
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+            np.int16, np.int32, np.int64, np.uint8,
+            np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+        else:
+            return super(CustomJSONEncoder, self).default(obj)
+
+# Créer une application Flask
 app = Flask(__name__)
+app.json_encoder = CustomJSONEncoder
+
 
 # Charger le modèle OVR
 with open('model/model.pkl', 'rb') as file:
@@ -20,12 +36,22 @@ with open('model/model.pkl', 'rb') as file:
 with open('model/tfidf_vectorizer.pkl', 'rb') as f:
     tfidf = pickle.load(f)
 
-# Charger le modèle OVR
-with open('model/model.pkl', 'rb') as file:
-    ovr_model = pickle.load(file)
+#Charger le mlb ajusté
+with open('model/mlb.pkl', 'rb') as f:
+    mlb = pickle.load(f)
 
-# Charger le TfidfVectorizer
-tfidf = TfidfVectorizer(max_df=1.0, min_df=1, stop_words='english')
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NumpyEncoder, self).default(obj)
+
+class_mapping = {i: class_name for i, class_name in enumerate(mlb.classes_)}
 
 # Fonctions de nettoyage du texte
 def tokenizer_fct(sentence) :
@@ -64,6 +90,13 @@ def transform_bow_lem_fct(desc_text) :
     transf_desc_text = ' '.join(lem_w)
     return transf_desc_text
 
+# Fonction personnalisée pour jsonify
+def custom_jsonify(*args, **kwargs):
+    return current_app.response_class(
+        json.dumps(dict(*args, **kwargs), cls=NumpyEncoder),
+        mimetype=current_app.config['JSONIFY_MIMETYPE']
+    )
+
 @app.route('/')
 def home():
     return "API Flask pour la prédiction de texte"
@@ -71,16 +104,21 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    input_text = request.json['text']
+    data = request.get_json(force=True)
+    input_text = data['text']
+    
     cleaned_text = transform_bow_lem_fct(input_text)
     text_tfidf = tfidf.transform([cleaned_text])
     prediction_proba = ovr_model.predict_proba(text_tfidf)
 
     threshold = 0.1
     sorted_indices = np.argsort(-prediction_proba[0])
-    result = [(ovr_model.classes_[i], prediction_proba[0][i]) for i in sorted_indices if prediction_proba[0][i] >= threshold]
+    result = [(class_mapping[ovr_model.classes_[i]], prediction_proba[0][i]) for i in sorted_indices if prediction_proba[0][i] >= threshold]
 
     return jsonify(result)
+
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
